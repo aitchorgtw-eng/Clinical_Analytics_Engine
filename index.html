@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>臨床數據智慧分析平台</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- React & ReactDOM -->
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<!-- Prop-Types (Recharts 依賴) -->
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<!-- Recharts (UMD 穩定版本) -->
+<script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
+<!-- Lucide 圖標庫 -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<!-- Babel 編譯器 -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Excel 解析庫 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- 截圖匯出庫 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+body {
+font-family: 'Noto Sans TC', sans-serif;
+background-color: #f1f5f9;
+margin: 0;
+overflow-x: hidden;
+}
+.recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #e2e8f0; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+/* 核心修正：強制圖表區域高度 */
+.chart-viewport {
+height: 500px !important;
+min-height: 500px !important;
+width: 100%;
+position: relative;
+display: block;
+}
+.stat-card {
+animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef } = React;
+// 自定義圖標組件
+const Icon = ({ name, size = 20, className = "" }) => {
+const [pathData, setPathData] = useState("");
+useEffect(() => {
+if (window.lucide && name) {
+const key = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+const icon = window.lucide.icons[key] || window.lucide.icons[name.toLowerCase()];
+if (icon && Array.isArray(icon)) {
+const html = icon.map(([tag, attrs]) => {
+const attrStr = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
+return `<${tag} ${attrStr}></${tag}>`;
+}).join('');
+setPathData(html);
+}
+}
+}, [name]);
+return (
+<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block ${className}`} dangerouslySetInnerHTML={{ __html: pathData }} />
+);
+};
+const COLORS = ['#0891b2', '#0e7490', '#155e75', '#334155', '#475569', '#64748b'];
+const App = () => {
+const [data, setData] = useState([]);
+const [chartType, setChartType] = useState('bar');
+const [filters, setFilters] = useState({});
+const [xAxisKey, setXAxisKey] = useState('');
+const [yAxisKey, setYAxisKey] = useState('');
+const [isExporting, setIsExporting] = useState(false);
+const [activeIndex, setActiveIndex] = useState(null);
+const [isReady, setIsReady] = useState(false);
+const chartRef = useRef(null);
+// 確保 Recharts 已經全域掛載
+useEffect(() => {
+const timer = setInterval(() => {
+if (window.Recharts && window.lucide) {
+setIsReady(true);
+clearInterval(timer);
+}
+}, 100);
+return () => clearInterval(timer);
+}, []);
+const VIRTUAL_METRICS = ['年度個案數統計', '『部』年度統計數量'];
+const EXCLUDED_FIELDS = ['序號', '編號', '電話', '移至大數據中心'];
+const columns = useMemo(() => (data.length > 0 ? Object.keys(data[0]) : []), [data]);
+const filterOptions = useMemo(() => {
+const options = {};
+columns.forEach(col => {
+if (col !== yAxisKey && !VIRTUAL_METRICS.includes(col)) {
+const vals = Array.from(new Set(data.map(item => String(item[col] || '')))).filter(v => v !== '');
+if (vals.length > 0 && vals.length < 30) options[col] = vals;
+}
+});
+return options;
+}, [data, columns, yAxisKey]);
+const filteredData = useMemo(() => {
+if (data.length === 0) return [];
+return data.filter(item =>
+Object.entries(filters).every(([k, v]) => !v || String(item[k]) === String(v))
+);
+}, [data, filters]);
+const chartData = useMemo(() => {
+if (filteredData.length === 0 || !xAxisKey || !yAxisKey) return [];
+const map = new Map();
+filteredData.forEach(item => {
+const key = String(item[xAxisKey] || '未指定');
+let val = 0;
+if (VIRTUAL_METRICS.includes(yAxisKey)) {
+val = 1;
+} else {
+const numeric = parseFloat(String(item[yAxisKey]).replace(/,/g, ''));
+val = isNaN(numeric) ? 1 : numeric;
+}
+map.set(key, (map.get(key) || 0) + val);
+});
+return Array.from(map.entries())
+.map(([name, value]) => ({ name, value }))
+.sort((a, b) => {
+if (xAxisKey.toLowerCase().includes('年度')) {
+const n = (s) => parseInt(s.match(/\d+/) || 0, 10);
+return n(a.name) - n(b.name);
+}
+return b.value - a.value;
+});
+}, [filteredData, xAxisKey, yAxisKey]);
+const totalSum = useMemo(() => chartData.reduce((a, b) => a + b.value, 0), [chartData]);
+const handleFile = (e) => {
+const file = e.target.files[0];
+if (!file) return;
+const reader = new FileReader();
+reader.onload = (evt) => {
+try {
+const wb = XLSX.read(evt.target.result, { type: 'binary' });
+const rawJson = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+if (rawJson.length > 0) {
+const cleanJson = rawJson.map(row => {
+const obj = {};
+Object.keys(row).forEach(k => obj[k.trim()] = row[k]);
+return obj;
+});
+const ks = Object.keys(cleanJson[0]);
+setData(cleanJson);
+setFilters({});
+const initialX = ks.find(k => k.includes('年度')) || ks[0];
+setXAxisKey(initialX);
+setYAxisKey('年度個案數統計');
+}
+} catch (err) {
+alert('檔案解析失敗，請確認是否為正確的 Excel 或 CSV 格式。');
+}
+};
+reader.readAsBinaryString(file);
+};
+const downloadReportJPG = async () => {
+if (!chartRef.current) return;
+setIsExporting(true);
+try {
+const opt = { backgroundColor: '#ffffff', style: { borderRadius: '0' } };
+const dataUrl = await window.htmlToImage.toJpeg(chartRef.current, opt);
+const link = document.createElement('a');
+link.download = `臨床數據分析_${xAxisKey}_${new Date().getTime()}.jpg`;
+link.href = dataUrl;
+link.click();
+} catch (e) { console.error(e); }
+finally { setIsExporting(false); }
+};
+const renderChartArea = () => {
+if (!isReady) return null;
+if (data.length === 0) return (
+<div className="h-full flex flex-col items-center justify-center text-slate-400">
+<Icon name="FileSpreadsheet" size={80} className="mb-6 opacity-10" />
+<p className="text-xl font-bold tracking-tight">等待載入 Excel 臨床數據...</p>
+<p className="text-sm mt-2">請點擊上方按鈕載入您的研究檔案</p>
+</div>
+);
+const {
+BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
+AreaChart, Area, LabelList
+} = window.Recharts;
+const common = { data: chartData, isAnimationActive: !isExporting };
+const labelProps = { fontSize: 12, fill: '#1e293b', fontWeight: '900', position: chartType === 'horizontal-bar' ? 'right' : 'top' };
+switch (chartType) {
+case 'bar':
+return (
+<ResponsiveContainer width="99%" height={500}>
+<BarChart {...common} margin={{top: 40, right: 30, left: 10, bottom: 20}} barCategoryGap="15%">
+<CartesianGrid strokeDasharray="3 3" vertical={false} />
+<XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 'bold'}} dy={10} />
+<YAxis axisLine={false} tickLine={false} tick={{fontSize: 11}} />
+<Tooltip cursor={{fill: 'rgba(0,0,0,0.02)'}} contentStyle={{borderRadius:'12px', border:'none', boxShadow:'0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+<Bar dataKey="value" fill="#0891b2" radius={[6, 6, 0, 0]} onMouseEnter={(_, i) => setActiveIndex(i)} onMouseLeave={() => setActiveIndex(null)}>
+{chartData.map((_, i) => <Cell key={i} fillOpacity={activeIndex === null || activeIndex === i ? 1 : 0.3} style={{transition: 'fill-opacity 0.3s'}} />)}
+<LabelList dataKey="value" {...labelProps} />
+</Bar>
+</BarChart>
+</ResponsiveContainer>
+);
+case 'horizontal-bar':
+return (
+<ResponsiveContainer width="99%" height={500}>
+<BarChart {...common} layout="vertical" margin={{top: 20, right: 60, left: 20, bottom: 20}} barCategoryGap="15%">
+<CartesianGrid strokeDasharray="3 3" horizontal={false} />
+<XAxis type="number" hide />
+<YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 'bold'}} />
+<Tooltip cursor={{fill: 'transparent'}} />
+<Bar dataKey="value" fill="#0e7490" radius={[0, 6, 6, 0]} onMouseEnter={(_, i) => setActiveIndex(i)} onMouseLeave={() => setActiveIndex(null)}>
+{chartData.map((_, i) => <Cell key={i} fillOpacity={activeIndex === null || activeIndex === i ? 1 : 0.3} style={{transition: 'fill-opacity 0.3s'}} />)}
+<LabelList dataKey="value" {...labelProps} />
+</Bar>
+</BarChart>
+</ResponsiveContainer>
+);
+case 'line':
+return (
+<ResponsiveContainer width="99%" height={500}>
+<LineChart {...common} margin={{top: 40, right: 40, left: 10, bottom: 20}}>
+<CartesianGrid strokeDasharray="3 3" vertical={false} />
+<XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 'bold'}} />
+<YAxis axisLine={false} tickLine={false} />
+<Tooltip />
+<Line type="monotone" dataKey="value" stroke="#0891b2" strokeWidth={4} dot={{ r: 6, fill: '#0891b2', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+</LineChart>
+</ResponsiveContainer>
+);
+case 'pie':
+return (
+<ResponsiveContainer width="99%" height={500}>
+<PieChart>
+<Pie data={chartData} cx="50%" cy="50%" innerRadius={80} outerRadius={130} paddingAngle={5} dataKey="value" stroke="none">
+{chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+</Pie>
+<Tooltip />
+<Legend iconType="circle" wrapperStyle={{paddingTop: '20px'}} />
+</PieChart>
+</ResponsiveContainer>
+);
+default: return null;
+}
+};
+if (!isReady) return <div className="h-screen flex items-center justify-center font-black text-cyan-800 animate-pulse text-2xl">系統啟動中...</div>;
+return (
+<div className="min-h-screen pb-12">
+{/* Header */}
+<header className="bg-white border-b-4 border-cyan-600 shadow-sm sticky top-0 z-50">
+<div className="max-w-[1600px] mx-auto px-8 py-5 flex flex-col md:flex-row justify-between items-center gap-6">
+<div className="flex items-center gap-5">
+<div className="bg-gradient-to-br from-cyan-600 to-indigo-800 p-4 rounded-2xl text-white shadow-xl">
+<Icon name="Activity" size={32} />
+</div>
+<div>
+<h1 className="text-2xl font-black text-slate-800 tracking-tighter">臨床數據智慧分析平台</h1>
+<p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-1 flex items-center gap-2">
+<Icon name="ShieldCheck" size={14} className="text-cyan-600" />
+Advanced Clinical Analytics Engine v2.9
+</p>
+</div>
+</div>
+<div className="flex gap-4">
+<label className="flex items-center gap-3 bg-slate-900 text-white px-7 py-3.5 rounded-2xl cursor-pointer hover:bg-slate-800 hover:scale-105 transition-all text-sm font-black shadow-lg">
+<Icon name="Upload" size={20} /> 載入臨床數據庫
+<input type="file" className="hidden" accept=".csv, .xlsx, .xls" onChange={handleFile} />
+</label>
+<button onClick={() => location.reload()} className="p-3.5 bg-white border-2 border-slate-100 text-slate-400 hover:text-red-500 hover:border-red-50 rounded-2xl transition-all shadow-sm">
+<Icon name="RefreshCw" size={24} />
+</button>
+</div>
+</div>
+</header>
+<main className="max-w-[1600px] mx-auto p-8 grid grid-cols-1 lg:grid-cols-12 gap-10">
+{/* Sidebar */}
+<aside className="lg:col-span-3 space-y-8">
+<div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100">
+<h3 className="text-base font-black text-slate-800 mb-8 flex items-center gap-3">
+<Icon name="Settings2" size={22} className="text-cyan-600" /> 核心分析配置
+</h3>
+<div className="space-y-6">
+<div className="group">
+<label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block group-focus-within:text-cyan-600 transition-colors">分組維度 (Variable X)</label>
+<select value={xAxisKey} onChange={e => setXAxisKey(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 focus:border-cyan-500 focus:bg-white outline-none transition-all appearance-none shadow-sm">
+{columns.map((c, i) => <option key={i} value={c}>{c}</option>)}
+</select>
+</div>
+<div className="group">
+<label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block group-focus-within:text-cyan-600 transition-colors">統計衡量指標 (Metric Y)</label>
+<select value={yAxisKey} onChange={e => setYAxisKey(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 focus:border-cyan-500 focus:bg-white outline-none transition-all appearance-none shadow-sm">
+<option value="年度個案數統計">📌 年度總計 (Count)</option>
+<option value="『部』年度統計數量">🏥 部科統計 (Total)</option>
+{columns.filter(c => !VIRTUAL_METRICS.includes(c) && !EXCLUDED_FIELDS.includes(c)).map((c, i) => <option key={i} value={c}>{c}</option>)}
+</select>
+</div>
+</div>
+{Object.keys(filterOptions).length > 0 && (
+<div className="mt-12 pt-8 border-t-2 border-slate-50 space-y-6">
+<h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 ml-1">
+<Icon name="Filter" size={16} className="text-cyan-600" /> 多維度特徵過濾
+</h4>
+<div className="space-y-5 max-h-[350px] overflow-auto custom-scrollbar pr-3">
+{Object.entries(filterOptions).map(([k, options]) => (
+<div key={k}>
+<label className="text-xs font-bold text-slate-500 block mb-2 ml-1">{k}</label>
+<select value={filters[k] || ''} onChange={e => setFilters({...filters, [k]: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-xs font-bold focus:ring-4 focus:ring-cyan-50 outline-none transition-all">
+<option value="">全部數據 (ALL)</option>
+{options.map((opt, i) => <option key={i} value={opt}>{opt}</option>)}
+</select>
+</div>
+))}
+</div>
+{Object.keys(filters).length > 0 && (
+<button onClick={() => setFilters({})} className="w-full py-3.5 text-xs font-black text-cyan-700 bg-cyan-50 hover:bg-cyan-100 rounded-2xl transition-all border border-cyan-100 flex items-center justify-center gap-2">
+<Icon name="RefreshCw" size={12} /> 重置所有篩選器
+</button>
+)}
+</div>
+)}
+</div>
+</aside>
+{/* Main Content */}
+<section className="lg:col-span-9 space-y-10">
+{/* Chart View */}
+<div ref={chartRef} className="bg-white rounded-[3.5rem] shadow-2xl shadow-slate-300/40 border border-slate-100 flex flex-col min-h-[650px] relative overflow-hidden">
+<div className="px-12 py-8 border-b border-slate-50 flex flex-col xl:flex-row justify-between items-center gap-8 bg-white/80 backdrop-blur-md sticky top-0 z-40">
+<div className="flex bg-slate-100/80 p-1.5 rounded-[1.5rem] border border-slate-200/50">
+{[
+{id:'bar', icon:'BarChart3', label:'長條圖'},
+{id:'horizontal-bar', icon:'List', label:'橫條圖'},
+{id:'line', icon:'TrendingUp', label:'趨勢圖'},
+{id:'pie', icon:'PieChart', label:'分佈圖'}
+].map(t => (
+<button key={t.id} onClick={() => setChartType(t.id)} className={`flex items-center gap-3 px-8 py-3 rounded-2xl text-xs font-black transition-all ${chartType === t.id ? 'bg-white text-cyan-800 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
+<Icon name={t.icon} size={16} /> {t.label}
+</button>
+))}
+</div>
+<div className="flex items-center gap-4">
+<button
+onClick={downloadReportJPG}
+className="flex items-center gap-3 px-8 py-4 rounded-2xl text-sm font-black bg-cyan-700 text-white hover:bg-cyan-800 shadow-xl transition-all active:scale-95"
+>
+<Icon name="Download" size={20} /> 匯出數據圖（JPG檔）
+</button>
+</div>
+</div>
+{/* 即時總量看板 - 調整為中型顯眼尺寸且下移避免重疊 */}
+{data.length > 0 && (
+<div className="absolute top-28 right-12 z-40 bg-white/95 backdrop-blur-md border-2 border-cyan-100 rounded-3xl px-6 py-4 shadow-xl text-center border-b-4 border-b-cyan-600 stat-card">
+<div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">即時加總總額</div>
+<div className="text-3xl font-black text-cyan-700 tabular-nums tracking-tighter">
+{totalSum.toLocaleString()}
+</div>
+</div>
+)}
+<div className="flex-1 p-12 chart-viewport">
+{renderChartArea()}
+</div>
+</div>
+{/* Data Table */}
+{data.length > 0 && (
+<div className="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col h-[500px] stat-card">
+<div className="px-10 py-7 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
+<h3 className="text-base font-black text-slate-800 flex items-center gap-3">
+<Icon name="ClipboardList" size={24} className="text-cyan-600" /> 臨床個案明細庫
+</h3>
+<div className="flex items-center gap-3 bg-cyan-50 px-5 py-2 rounded-full">
+<span className="text-[10px] font-black text-cyan-700 uppercase tracking-widest leading-none">Total Datasets</span>
+<span className="text-lg font-black text-cyan-800 leading-none">{filteredData.length}</span>
+</div>
+</div>
+<div className="overflow-auto flex-1 custom-scrollbar">
+<table className="w-full text-left text-sm border-separate border-spacing-0">
+<thead className="bg-slate-50/50 backdrop-blur text-slate-400 text-[10px] font-black uppercase tracking-widest sticky top-0 z-20">
+<tr>{columns.map((c, i) => <th key={i} className="px-10 py-6 border-b-2 border-slate-100">{c}</th>)}</tr>
+</thead>
+<tbody className="divide-y divide-slate-50">
+{filteredData.slice(0, 300).map((row, i) => (
+<tr key={i} className="hover:bg-cyan-50/20 transition-all group">
+{columns.map((c, j) => (
+<td key={j} className={`px-10 py-5 text-slate-600 group-hover:text-slate-900 border-b border-slate-50/50 ${c === yAxisKey ? 'font-black text-cyan-800 bg-cyan-50/10' : ''}`}>
+{row[c]}
+</td>
+))}
+</tr>
+))}
+</tbody>
+</table>
+{filteredData.length > 300 && (
+<div className="p-8 text-center text-slate-400 text-sm font-bold italic bg-slate-50/30">
+系統僅預覽前 300 筆資料。請利用側邊欄篩選器進行精確數據調閱。
+</div>
+)}
+</div>
+</div>
+)}
+</section>
+</main>
+</div>
+);
+};
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
