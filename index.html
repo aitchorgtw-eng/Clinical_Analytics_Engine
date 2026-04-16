@@ -1,416 +1,676 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>臨床數據智慧分析平台</title>
-<!-- Tailwind CSS -->
-<script src="https://cdn.tailwindcss.com"></script>
-<!-- React & ReactDOM -->
-<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-<!-- Prop-Types (Recharts 依賴) -->
-<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
-<!-- Recharts (UMD 穩定版本) -->
-<script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
-<!-- Lucide 圖標庫 -->
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<!-- Babel 編譯器 -->
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<!-- Excel 解析庫 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<!-- 截圖匯出庫 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js"></script>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
-body {
-font-family: 'Noto Sans TC', sans-serif;
-background-color: #f1f5f9;
-margin: 0;
-overflow-x: hidden;
-}
-.recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #e2e8f0; }
-.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-/* 核心修正：強制圖表區域高度 */
-.chart-viewport {
-height: 500px !important;
-min-height: 500px !important;
-width: 100%;
-position: relative;
-display: block;
-}
-.stat-card {
-animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>診前健康評估問卷</title>
+    <style>
+        :root { --primary: #0078d4; --bg: #f3f2f1; --card-bg: #ffffff; --text: #333333; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; }
+        
+        /* 頂部導覽與進度條 */
+        .header { background: var(--primary); color: white; padding: 15px 20px; text-align: center; font-size: 20px; font-weight: bold; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .progress-container { background: #e1dfdd; height: 8px; width: 100%; }
+        .progress-bar { background: #ffb900; height: 100%; width: 0%; transition: 0.3s; }
+
+        /* 主體卡片設計 */
+        .container { max-width: 800px; margin: 20px auto; background: var(--card-bg); padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); min-height: 60vh; }
+        .step { display: none; animation: fadeIn 0.4s; }
+        .step.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        h3 { color: var(--primary); border-bottom: 2px solid #edebe9; padding-bottom: 10px; margin-top: 0; }
+        .question { margin-bottom: 25px; }
+        .question-title { font-size: 18px; font-weight: bold; margin-bottom: 12px; }
+
+        /* 輸入框與大按鈕選項設計 */
+        input[type="text"], textarea { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-family: inherit; margin-top: 8px; }
+        input[type="text"]:focus, textarea:focus { border-color: var(--primary); outline: none; }
+        textarea { resize: vertical; height: 100px; }
+        
+        .option-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+        /* 科系選單可容納較多字，稍微縮小最小寬度 */
+        .option-group.dept-group { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+        
+        .option-label { display: block; padding: 15px; border: 2px solid #e1dfdd; border-radius: 8px; text-align: center; cursor: pointer; font-size: 16px; transition: 0.2s; background: #faf9f8; font-weight: 500; }
+        .option-label:hover { background: #f3f2f1; }
+        input[type="radio"], input[type="checkbox"] { display: none; }
+        input[type="radio"]:checked + .option-label, input[type="checkbox"]:checked + .option-label { border-color: var(--primary); background: #e1f0ff; color: var(--primary); }
+
+        /* 疼痛拉桿 */
+        .slider-container { margin: 20px 0; padding: 0 10px; }
+        input[type="range"] { width: 100%; height: 8px; border-radius: 4px; outline: none; }
+        .slider-labels { display: flex; justify-content: space-between; margin-top: 10px; font-weight: bold; color: #666; }
+        #painValueDisplay { font-size: 24px; color: #d13438; font-weight: bold; text-align: center; display: block; margin-top: 10px; }
+
+        .sub-question { display: none; margin-top: 15px; padding: 15px; background: #fff8f0; border-left: 4px solid #ffb900; border-radius: 0 8px 8px 0; }
+
+        /* 底部按鈕區 */
+        .footer-buttons { display: flex; justify-content: space-between; margin-top: 30px; border-top: 1px solid #edebe9; padding-top: 20px; }
+        button { padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; transition: 0.2s; }
+        .btn-prev { background: #edebe9; color: #333; }
+        .btn-prev:hover { background: #d2d0ce; }
+        .btn-next { background: var(--primary); color: white; flex: 1; margin-left: 15px; }
+        .btn-next:hover { background: #005a9e; }
+        .btn-submit { background: #107c10; color: white; flex: 1; margin-left: 15px; }
+        .btn-submit:hover { background: #0b5a0b; }
+
+        /* 彙總清單畫面設計 */
+        .summary-box { background: #f8f9fa; border: 1px solid #e1dfdd; border-radius: 8px; padding: 20px; text-align: left; margin-top: 20px; max-height: 50vh; overflow-y: auto; }
+        .summary-item { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed #ccc; }
+        .summary-item:last-child { border-bottom: none; }
+        .summary-q { font-weight: bold; color: #005a9e; font-size: 15px; margin-bottom: 4px; }
+        .summary-a { font-size: 16px; color: #333; }
+
+        @media (max-width: 600px) {
+            .option-group { grid-template-columns: 1fr; }
+        }
+    </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
-const { useState, useMemo, useEffect, useRef } = React;
-// 自定義圖標組件
-const Icon = ({ name, size = 20, className = "" }) => {
-const [pathData, setPathData] = useState("");
-useEffect(() => {
-if (window.lucide && name) {
-const key = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-const icon = window.lucide.icons[key] || window.lucide.icons[name.toLowerCase()];
-if (icon && Array.isArray(icon)) {
-const html = icon.map(([tag, attrs]) => {
-const attrStr = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
-return `<${tag} ${attrStr}></${tag}>`;
-}).join('');
-setPathData(html);
-}
-}
-}, [name]);
-return (
-<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`inline-block ${className}`} dangerouslySetInnerHTML={{ __html: pathData }} />
-);
-};
-const COLORS = ['#0891b2', '#0e7490', '#155e75', '#334155', '#475569', '#64748b'];
-const App = () => {
-const [data, setData] = useState([]);
-const [chartType, setChartType] = useState('bar');
-const [filters, setFilters] = useState({});
-const [xAxisKey, setXAxisKey] = useState('');
-const [yAxisKey, setYAxisKey] = useState('');
-const [isExporting, setIsExporting] = useState(false);
-const [activeIndex, setActiveIndex] = useState(null);
-const [isReady, setIsReady] = useState(false);
-const chartRef = useRef(null);
-// 確保 Recharts 已經全域掛載
-useEffect(() => {
-const timer = setInterval(() => {
-if (window.Recharts && window.lucide) {
-setIsReady(true);
-clearInterval(timer);
-}
-}, 100);
-return () => clearInterval(timer);
-}, []);
-const VIRTUAL_METRICS = ['年度個案數統計', '『部』年度統計數量'];
-const EXCLUDED_FIELDS = ['序號', '編號', '電話', '移至大數據中心'];
-const columns = useMemo(() => (data.length > 0 ? Object.keys(data[0]) : []), [data]);
-const filterOptions = useMemo(() => {
-const options = {};
-columns.forEach(col => {
-if (col !== yAxisKey && !VIRTUAL_METRICS.includes(col)) {
-const vals = Array.from(new Set(data.map(item => String(item[col] || '')))).filter(v => v !== '');
-if (vals.length > 0 && vals.length < 30) options[col] = vals;
-}
-});
-return options;
-}, [data, columns, yAxisKey]);
-const filteredData = useMemo(() => {
-if (data.length === 0) return [];
-return data.filter(item =>
-Object.entries(filters).every(([k, v]) => !v || String(item[k]) === String(v))
-);
-}, [data, filters]);
-const chartData = useMemo(() => {
-if (filteredData.length === 0 || !xAxisKey || !yAxisKey) return [];
-const map = new Map();
-filteredData.forEach(item => {
-const key = String(item[xAxisKey] || '未指定');
-let val = 0;
-if (VIRTUAL_METRICS.includes(yAxisKey)) {
-val = 1;
-} else {
-const numeric = parseFloat(String(item[yAxisKey]).replace(/,/g, ''));
-val = isNaN(numeric) ? 1 : numeric;
-}
-map.set(key, (map.get(key) || 0) + val);
-});
-return Array.from(map.entries())
-.map(([name, value]) => ({ name, value }))
-.sort((a, b) => {
-if (xAxisKey.toLowerCase().includes('年度')) {
-const n = (s) => parseInt(s.match(/\d+/) || 0, 10);
-return n(a.name) - n(b.name);
-}
-return b.value - a.value;
-});
-}, [filteredData, xAxisKey, yAxisKey]);
-const totalSum = useMemo(() => chartData.reduce((a, b) => a + b.value, 0), [chartData]);
-const handleFile = (e) => {
-const file = e.target.files[0];
-if (!file) return;
-const reader = new FileReader();
-reader.onload = (evt) => {
-try {
-const wb = XLSX.read(evt.target.result, { type: 'binary' });
-const rawJson = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-if (rawJson.length > 0) {
-const cleanJson = rawJson.map(row => {
-const obj = {};
-Object.keys(row).forEach(k => obj[k.trim()] = row[k]);
-return obj;
-});
-const ks = Object.keys(cleanJson[0]);
-setData(cleanJson);
-setFilters({});
-const initialX = ks.find(k => k.includes('年度')) || ks[0];
-setXAxisKey(initialX);
-setYAxisKey('年度個案數統計');
-}
-} catch (err) {
-alert('檔案解析失敗，請確認是否為正確的 Excel 或 CSV 格式。');
-}
-};
-reader.readAsBinaryString(file);
-};
-const downloadReportJPG = async () => {
-if (!chartRef.current) return;
-setIsExporting(true);
-try {
-const opt = { backgroundColor: '#ffffff', style: { borderRadius: '0' } };
-const dataUrl = await window.htmlToImage.toJpeg(chartRef.current, opt);
-const link = document.createElement('a');
-link.download = `臨床數據分析_${xAxisKey}_${new Date().getTime()}.jpg`;
-link.href = dataUrl;
-link.click();
-} catch (e) { console.error(e); }
-finally { setIsExporting(false); }
-};
-const renderChartArea = () => {
-if (!isReady) return null;
-if (data.length === 0) return (
-<div className="h-full flex flex-col items-center justify-center text-slate-400">
-<Icon name="FileSpreadsheet" size={80} className="mb-6 opacity-10" />
-<p className="text-xl font-bold tracking-tight">等待載入 Excel 臨床數據...</p>
-<p className="text-sm mt-2">請點擊上方按鈕載入您的研究檔案</p>
-</div>
-);
-const {
-BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
-AreaChart, Area, LabelList
-} = window.Recharts;
-const common = { data: chartData, isAnimationActive: !isExporting };
-const labelProps = { fontSize: 12, fill: '#1e293b', fontWeight: '900', position: chartType === 'horizontal-bar' ? 'right' : 'top' };
-switch (chartType) {
-case 'bar':
-return (
-<ResponsiveContainer width="99%" height={500}>
-<BarChart {...common} margin={{top: 40, right: 30, left: 10, bottom: 20}} barCategoryGap="15%">
-<CartesianGrid strokeDasharray="3 3" vertical={false} />
-<XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 'bold'}} dy={10} />
-<YAxis axisLine={false} tickLine={false} tick={{fontSize: 11}} />
-<Tooltip cursor={{fill: 'rgba(0,0,0,0.02)'}} contentStyle={{borderRadius:'12px', border:'none', boxShadow:'0 10px 15px -3px rgba(0,0,0,0.1)'}} />
-<Bar dataKey="value" fill="#0891b2" radius={[6, 6, 0, 0]} onMouseEnter={(_, i) => setActiveIndex(i)} onMouseLeave={() => setActiveIndex(null)}>
-{chartData.map((_, i) => <Cell key={i} fillOpacity={activeIndex === null || activeIndex === i ? 1 : 0.3} style={{transition: 'fill-opacity 0.3s'}} />)}
-<LabelList dataKey="value" {...labelProps} />
-</Bar>
-</BarChart>
-</ResponsiveContainer>
-);
-case 'horizontal-bar':
-return (
-<ResponsiveContainer width="99%" height={500}>
-<BarChart {...common} layout="vertical" margin={{top: 20, right: 60, left: 20, bottom: 20}} barCategoryGap="15%">
-<CartesianGrid strokeDasharray="3 3" horizontal={false} />
-<XAxis type="number" hide />
-<YAxis dataKey="name" type="category" width={100} axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 'bold'}} />
-<Tooltip cursor={{fill: 'transparent'}} />
-<Bar dataKey="value" fill="#0e7490" radius={[0, 6, 6, 0]} onMouseEnter={(_, i) => setActiveIndex(i)} onMouseLeave={() => setActiveIndex(null)}>
-{chartData.map((_, i) => <Cell key={i} fillOpacity={activeIndex === null || activeIndex === i ? 1 : 0.3} style={{transition: 'fill-opacity 0.3s'}} />)}
-<LabelList dataKey="value" {...labelProps} />
-</Bar>
-</BarChart>
-</ResponsiveContainer>
-);
-case 'line':
-return (
-<ResponsiveContainer width="99%" height={500}>
-<LineChart {...common} margin={{top: 40, right: 40, left: 10, bottom: 20}}>
-<CartesianGrid strokeDasharray="3 3" vertical={false} />
-<XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 'bold'}} />
-<YAxis axisLine={false} tickLine={false} />
-<Tooltip />
-<Line type="monotone" dataKey="value" stroke="#0891b2" strokeWidth={4} dot={{ r: 6, fill: '#0891b2', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
-</LineChart>
-</ResponsiveContainer>
-);
-case 'pie':
-return (
-<ResponsiveContainer width="99%" height={500}>
-<PieChart>
-<Pie data={chartData} cx="50%" cy="50%" innerRadius={80} outerRadius={130} paddingAngle={5} dataKey="value" stroke="none">
-{chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-</Pie>
-<Tooltip />
-<Legend iconType="circle" wrapperStyle={{paddingTop: '20px'}} />
-</PieChart>
-</ResponsiveContainer>
-);
-default: return null;
-}
-};
-if (!isReady) return <div className="h-screen flex items-center justify-center font-black text-cyan-800 animate-pulse text-2xl">系統啟動中...</div>;
-return (
-<div className="min-h-screen pb-12">
-{/* Header */}
-<header className="bg-white border-b-4 border-cyan-600 shadow-sm sticky top-0 z-50">
-<div className="max-w-[1600px] mx-auto px-8 py-5 flex flex-col md:flex-row justify-between items-center gap-6">
-<div className="flex items-center gap-5">
-<div className="bg-gradient-to-br from-cyan-600 to-indigo-800 p-4 rounded-2xl text-white shadow-xl">
-<Icon name="Activity" size={32} />
-</div>
-<div>
-<h1 className="text-2xl font-black text-slate-800 tracking-tighter">臨床數據智慧分析平台</h1>
-<p className="text-xs text-slate-400 font-black uppercase tracking-widest mt-1 flex items-center gap-2">
-<Icon name="ShieldCheck" size={14} className="text-cyan-600" />
-Advanced Clinical Analytics Engine v2.9
-</p>
-</div>
-</div>
-<div className="flex gap-4">
-<label className="flex items-center gap-3 bg-slate-900 text-white px-7 py-3.5 rounded-2xl cursor-pointer hover:bg-slate-800 hover:scale-105 transition-all text-sm font-black shadow-lg">
-<Icon name="Upload" size={20} /> 載入臨床數據庫
-<input type="file" className="hidden" accept=".csv, .xlsx, .xls" onChange={handleFile} />
-</label>
-<button onClick={() => location.reload()} className="p-3.5 bg-white border-2 border-slate-100 text-slate-400 hover:text-red-500 hover:border-red-50 rounded-2xl transition-all shadow-sm">
-<Icon name="RefreshCw" size={24} />
-</button>
-</div>
-</div>
-</header>
-<main className="max-w-[1600px] mx-auto p-8 grid grid-cols-1 lg:grid-cols-12 gap-10">
-{/* Sidebar */}
-<aside className="lg:col-span-3 space-y-8">
-<div className="bg-white p-8 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100">
-<h3 className="text-base font-black text-slate-800 mb-8 flex items-center gap-3">
-<Icon name="Settings2" size={22} className="text-cyan-600" /> 核心分析配置
-</h3>
-<div className="space-y-6">
-<div className="group">
-<label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block group-focus-within:text-cyan-600 transition-colors">分組維度 (Variable X)</label>
-<select value={xAxisKey} onChange={e => setXAxisKey(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 focus:border-cyan-500 focus:bg-white outline-none transition-all appearance-none shadow-sm">
-{columns.map((c, i) => <option key={i} value={c}>{c}</option>)}
-</select>
-</div>
-<div className="group">
-<label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block group-focus-within:text-cyan-600 transition-colors">統計衡量指標 (Metric Y)</label>
-<select value={yAxisKey} onChange={e => setYAxisKey(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 focus:border-cyan-500 focus:bg-white outline-none transition-all appearance-none shadow-sm">
-<option value="年度個案數統計">📌 年度總計 (Count)</option>
-<option value="『部』年度統計數量">🏥 部科統計 (Total)</option>
-{columns.filter(c => !VIRTUAL_METRICS.includes(c) && !EXCLUDED_FIELDS.includes(c)).map((c, i) => <option key={i} value={c}>{c}</option>)}
-</select>
-</div>
-</div>
-{Object.keys(filterOptions).length > 0 && (
-<div className="mt-12 pt-8 border-t-2 border-slate-50 space-y-6">
-<h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 ml-1">
-<Icon name="Filter" size={16} className="text-cyan-600" /> 多維度特徵過濾
-</h4>
-<div className="space-y-5 max-h-[350px] overflow-auto custom-scrollbar pr-3">
-{Object.entries(filterOptions).map(([k, options]) => (
-<div key={k}>
-<label className="text-xs font-bold text-slate-500 block mb-2 ml-1">{k}</label>
-<select value={filters[k] || ''} onChange={e => setFilters({...filters, [k]: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-xs font-bold focus:ring-4 focus:ring-cyan-50 outline-none transition-all">
-<option value="">全部數據 (ALL)</option>
-{options.map((opt, i) => <option key={i} value={opt}>{opt}</option>)}
-</select>
-</div>
-))}
-</div>
-{Object.keys(filters).length > 0 && (
-<button onClick={() => setFilters({})} className="w-full py-3.5 text-xs font-black text-cyan-700 bg-cyan-50 hover:bg-cyan-100 rounded-2xl transition-all border border-cyan-100 flex items-center justify-center gap-2">
-<Icon name="RefreshCw" size={12} /> 重置所有篩選器
-</button>
-)}
-</div>
-)}
-</div>
-</aside>
-{/* Main Content */}
-<section className="lg:col-span-9 space-y-10">
-{/* Chart View */}
-<div ref={chartRef} className="bg-white rounded-[3.5rem] shadow-2xl shadow-slate-300/40 border border-slate-100 flex flex-col min-h-[650px] relative overflow-hidden">
-<div className="px-12 py-8 border-b border-slate-50 flex flex-col xl:flex-row justify-between items-center gap-8 bg-white/80 backdrop-blur-md sticky top-0 z-40">
-<div className="flex bg-slate-100/80 p-1.5 rounded-[1.5rem] border border-slate-200/50">
-{[
-{id:'bar', icon:'BarChart3', label:'長條圖'},
-{id:'horizontal-bar', icon:'List', label:'橫條圖'},
-{id:'line', icon:'TrendingUp', label:'趨勢圖'},
-{id:'pie', icon:'PieChart', label:'分佈圖'}
-].map(t => (
-<button key={t.id} onClick={() => setChartType(t.id)} className={`flex items-center gap-3 px-8 py-3 rounded-2xl text-xs font-black transition-all ${chartType === t.id ? 'bg-white text-cyan-800 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
-<Icon name={t.icon} size={16} /> {t.label}
-</button>
-))}
-</div>
-<div className="flex items-center gap-4">
-<button
-onClick={downloadReportJPG}
-className="flex items-center gap-3 px-8 py-4 rounded-2xl text-sm font-black bg-cyan-700 text-white hover:bg-cyan-800 shadow-xl transition-all active:scale-95"
->
-<Icon name="Download" size={20} /> 匯出數據圖（JPG檔）
-</button>
-</div>
-</div>
-{/* 即時總量看板 - 調整為中型顯眼尺寸且下移避免重疊 */}
-{data.length > 0 && (
-<div className="absolute top-28 right-12 z-40 bg-white/95 backdrop-blur-md border-2 border-cyan-100 rounded-3xl px-6 py-4 shadow-xl text-center border-b-4 border-b-cyan-600 stat-card">
-<div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">即時加總總額</div>
-<div className="text-3xl font-black text-cyan-700 tabular-nums tracking-tighter">
-{totalSum.toLocaleString()}
-</div>
-</div>
-)}
-<div className="flex-1 p-12 chart-viewport">
-{renderChartArea()}
-</div>
-</div>
-{/* Data Table */}
-{data.length > 0 && (
-<div className="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden flex flex-col h-[500px] stat-card">
-<div className="px-10 py-7 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10 shadow-sm">
-<h3 className="text-base font-black text-slate-800 flex items-center gap-3">
-<Icon name="ClipboardList" size={24} className="text-cyan-600" /> 臨床個案明細庫
-</h3>
-<div className="flex items-center gap-3 bg-cyan-50 px-5 py-2 rounded-full">
-<span className="text-[10px] font-black text-cyan-700 uppercase tracking-widest leading-none">Total Datasets</span>
-<span className="text-lg font-black text-cyan-800 leading-none">{filteredData.length}</span>
-</div>
-</div>
-<div className="overflow-auto flex-1 custom-scrollbar">
-<table className="w-full text-left text-sm border-separate border-spacing-0">
-<thead className="bg-slate-50/50 backdrop-blur text-slate-400 text-[10px] font-black uppercase tracking-widest sticky top-0 z-20">
-<tr>{columns.map((c, i) => <th key={i} className="px-10 py-6 border-b-2 border-slate-100">{c}</th>)}</tr>
-</thead>
-<tbody className="divide-y divide-slate-50">
-{filteredData.slice(0, 300).map((row, i) => (
-<tr key={i} className="hover:bg-cyan-50/20 transition-all group">
-{columns.map((c, j) => (
-<td key={j} className={`px-10 py-5 text-slate-600 group-hover:text-slate-900 border-b border-slate-50/50 ${c === yAxisKey ? 'font-black text-cyan-800 bg-cyan-50/10' : ''}`}>
-{row[c]}
-</td>
-))}
-</tr>
-))}
-</tbody>
-</table>
-{filteredData.length > 300 && (
-<div className="p-8 text-center text-slate-400 text-sm font-bold italic bg-slate-50/30">
-系統僅預覽前 300 筆資料。請利用側邊欄篩選器進行精確數據調閱。
-</div>
-)}
-</div>
-</div>
-)}
-</section>
-</main>
-</div>
-);
-};
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
-</script>
+
+    <div class="header" id="mainHeader">📋 門診看診前健康評估問卷</div>
+    <div class="progress-container" id="progressContainer"><div class="progress-bar" id="progressBar"></div></div>
+
+    <div class="container" id="mainContainer">
+        <form id="questionnaireForm">
+            
+            <div class="step active" id="step0">
+                <h3>第一步：請確認您的基本資料與看診科別</h3>
+                <div class="question">
+                    <div class="question-title">病患姓名：</div>
+                    <input type="text" id="pName" placeholder="請輸入姓名" required>
+                </div>
+                <div class="question">
+                    <div class="question-title">身分證字號 / 居留證號：</div>
+                    <input type="text" id="pId" placeholder="請輸入身分證字號 (包含英文字母)" maxlength="10" oninput="this.value = this.value.toUpperCase()" required>
+                    <div id="idError" style="color: #d13438; font-size: 14px; margin-top: 5px; display: none;">身分證字號格式錯誤，請重新檢查！</div>
+                </div>
+                <div class="question">
+                    <div class="question-title">生理性別：</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="gender" value="男" required><span class="option-label">👨 男性</span></label>
+                        <label><input type="radio" name="gender" value="女"><span class="option-label">👩 女性</span></label>
+                    </div>
+                </div>
+                
+                <div class="question" style="background: #f0f8ff; padding: 20px; border-radius: 8px; border: 1px solid #cce3f5; margin-top: 25px;">
+                    <div class="question-title" style="color: #005a9e;">🏥 您目前欲看診的科別是？</div>
+                    <div style="font-size: 14px; color: #666; margin-bottom: 10px;">請先選擇主科別，再選擇詳細科別</div>
+                    
+                    <div class="option-group dept-group" id="mainDeptGroup">
+                        </div>
+
+                    <div id="subDeptContainer" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #b3d4fc;">
+                        <div class="question-title" style="font-size: 16px;">請選擇詳細科別：</div>
+                        <div class="option-group dept-group" id="subDeptGroup">
+                            </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step" id="step1">
+                <h3>模組一：本次就診大方向</h3>
+                <div class="question">
+                    <div class="question-title">1. 請問您今天來看診，主要是因為什麼原因？ (單選)</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q1" value="身體不舒服"><span class="option-label">🤒 身體不舒服</span></label>
+                        <label><input type="radio" name="q1" value="慢性病拿藥"><span class="option-label">💊 慢性病拿藥</span></label>
+                        <label><input type="radio" name="q1" value="看檢驗報告"><span class="option-label">📄 看檢驗報告</span></label>
+                        <label><input type="radio" name="q1" value="醫師約診"><span class="option-label">📅 醫師約診</span></label>
+                        <label><input type="radio" name="q1" value="開立診斷書"><span class="option-label">📝 開立診斷書</span></label>
+                        <label><input type="radio" name="q1" value="其他"><span class="option-label">❓ 其他</span></label>
+                    </div>
+                </div>
+                <div id="q1-sub" style="display: none;">
+                    <div class="question">
+                        <div class="question-title">2. 這個不舒服的狀況，大約發生多久了？</div>
+                        <div class="option-group">
+                            <label><input type="radio" name="q2" value="今天剛發生"><span class="option-label">今天剛發生</span></label>
+                            <label><input type="radio" name="q2" value="幾天內"><span class="option-label">幾天內</span></label>
+                            <label><input type="radio" name="q2" value="一到兩週"><span class="option-label">一到兩週</span></label>
+                            <label><input type="radio" name="q2" value="幾個月"><span class="option-label">幾個月</span></label>
+                            <label><input type="radio" name="q2" value="超過半年以上"><span class="option-label">超過半年以上</span></label>
+                        </div>
+                    </div>
+                    <div class="question">
+                        <div class="question-title">3. 這是您第一次因為這個問題來看診嗎？</div>
+                        <div class="option-group">
+                            <label><input type="radio" name="q3" value="是，第一次看"><span class="option-label">是，第一次看</span></label>
+                            <label><input type="radio" name="q3" value="不是，之前在別家看過"><span class="option-label">之前在別家看過</span></label>
+                            <label><input type="radio" name="q3" value="不是，之前在本院看過"><span class="option-label">之前在本院看過</span></label>
+                        </div>
+                    </div>
+                    <div class="question">
+                        <div class="question-title">4. 除了您，最近身邊的家人同事有類似症狀嗎？</div>
+                        <div class="option-group">
+                            <label><input type="radio" name="q4" value="有"><span class="option-label">有</span></label>
+                            <label><input type="radio" name="q4" value="沒有"><span class="option-label">沒有</span></label>
+                            <label><input type="radio" name="q4" value="不清楚"><span class="option-label">不清楚</span></label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step" id="step2">
+                <h3>模組二：症狀深入解析</h3>
+                <div class="question">
+                    <div class="question-title">5. 請問最不舒服的位置在哪裡？ (可多選)</div>
+                    <div class="option-group">
+                        <label><input type="checkbox" name="q5" value="頭部"><span class="option-label">👤 頭部/臉部</span></label>
+                        <label><input type="checkbox" name="q5" value="喉嚨"><span class="option-label">🗣️ 喉嚨/頸部</span></label>
+                        <label><input type="checkbox" name="q5" value="胸部"><span class="option-label">🫁 胸部/心臟</span></label>
+                        <label><input type="checkbox" name="q5" value="腹部"><span class="option-label">🤰 腹部/腸胃</span></label>
+                        <label><input type="checkbox" name="q5" value="四肢"><span class="option-label">💪 手腳四肢</span></label>
+                        <label><input type="checkbox" name="q5" value="全身"><span class="option-label">🧍 全身</span></label>
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">6. 這種不舒服的感覺，比較像是什麼？ (可多選)</div>
+                    <div class="option-group">
+                        <label><input type="checkbox" name="q6" value="抽痛"><span class="option-label">抽痛</span></label>
+                        <label><input type="checkbox" name="q6" value="悶痛"><span class="option-label">悶痛</span></label>
+                        <label><input type="checkbox" name="q6" value="刺痛"><span class="option-label">刺痛</span></label>
+                        <label><input type="checkbox" name="q6" value="絞痛"><span class="option-label">絞痛</span></label>
+                        <label><input type="checkbox" name="q6" value="麻麻的"><span class="option-label">麻麻的</span></label>
+                        <label><input type="checkbox" name="q6" value="痠痛"><span class="option-label">痠痛</span></label>
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">7. 您現在的痛苦程度大約是幾分？</div>
+                    <div class="slider-container">
+                        <input type="range" id="painSlider" name="q7" min="0" max="10" value="0">
+                        <span id="painValueDisplay">0 分 (無痛感)</span>
+                        <div class="slider-labels"><span>0</span><span>5</span><span>10</span></div>
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">10. 除了主要的不舒服，還有伴隨哪些狀況？ (可多選)</div>
+                    <div class="option-group">
+                        <label><input type="checkbox" name="q10" value="發燒"><span class="option-label">發燒</span></label>
+                        <label><input type="checkbox" name="q10" value="咳嗽"><span class="option-label">咳嗽</span></label>
+                        <label><input type="checkbox" name="q10" value="喘不過氣"><span class="option-label">喘不過氣</span></label>
+                        <label><input type="checkbox" name="q10" value="噁心嘔吐"><span class="option-label">噁心嘔吐</span></label>
+                        <label><input type="checkbox" name="q10" value="拉肚子"><span class="option-label">拉肚子</span></label>
+                        <label><input type="checkbox" name="q10" value="頭暈"><span class="option-label">頭暈</span></label>
+                        <label><input type="checkbox" name="q10" value="都沒有"><span class="option-label">都沒有</span></label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step" id="step3">
+                <h3>模組三：過去病史與用藥安全</h3>
+                <div class="question">
+                    <div class="question-title">13. 請問您過去有被醫師診斷出以下慢性疾病嗎？ (可多選)</div>
+                    <div class="option-group">
+                        <label><input type="checkbox" name="q13" value="高血壓"><span class="option-label">高血壓</span></label>
+                        <label><input type="checkbox" name="q13" value="糖尿病"><span class="option-label">糖尿病</span></label>
+                        <label><input type="checkbox" name="q13" value="心臟病"><span class="option-label">心臟病</span></label>
+                        <label><input type="checkbox" name="q13" value="氣喘"><span class="option-label">氣喘</span></label>
+                        <label><input type="checkbox" name="q13" value="都沒有"><span class="option-label">都沒有</span></label>
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">15. 請問您曾經對任何「藥物」過敏嗎？</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q15" value="沒有" onchange="toggleSub('q15-sub', false)"><span class="option-label">沒有</span></label>
+                        <label><input type="radio" name="q15" value="有" onchange="toggleSub('q15-sub', true)"><span class="option-label">有</span></label>
+                    </div>
+                    <div id="q15-sub" class="sub-question">
+                        請說明是對哪種藥物過敏？症狀是什麼？
+                        <input type="text" name="q15_detail" placeholder="例如：盤尼西林會起紅疹">
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">17. 請問您過去曾經開過刀，或是住院過嗎？</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q17" value="沒有" onchange="toggleSub('q17-sub', false)"><span class="option-label">沒有</span></label>
+                        <label><input type="radio" name="q17" value="有" onchange="toggleSub('q17-sub', true)"><span class="option-label">有</span></label>
+                    </div>
+                    <div id="q17-sub" class="sub-question">
+                        請簡單描述開刀或住院的原因與年份：
+                        <input type="text" name="q17_detail" placeholder="例如：2015年割盲腸">
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">18. 【TOCC】近一個月內，有出國或接觸傳染病患者嗎？</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q18" value="沒有"><span class="option-label">沒有</span></label>
+                        <label><input type="radio" name="q18" value="有"><span class="option-label">有</span></label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step" id="step4">
+                <h3>模組四：生活史與家族史</h3>
+                <div class="question">
+                    <div class="question-title">20. 請問您有抽菸的習慣嗎？</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q20" value="從來沒有"><span class="option-label">從來沒有</span></label>
+                        <label><input type="radio" name="q20" value="已經戒了"><span class="option-label">已經戒了</span></label>
+                        <label><input type="radio" name="q20" value="有"><span class="option-label">目前有抽菸</span></label>
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">21. 請問您有喝酒的習慣嗎？</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q21" value="從來沒有"><span class="option-label">從來沒有</span></label>
+                        <label><input type="radio" name="q21" value="偶爾喝"><span class="option-label">偶爾應酬喝</span></label>
+                        <label><input type="radio" name="q21" value="經常喝"><span class="option-label">幾乎每天喝</span></label>
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">24. 為了評估風險，您的工作性質偏向哪一種？</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q24" value="坐辦公室"><span class="option-label">坐辦公室內勤</span></label>
+                        <label><input type="radio" name="q24" value="體力勞動"><span class="option-label">需久站或搬重物</span></label>
+                        <label><input type="radio" name="q24" value="排班熬夜"><span class="option-label">排班熬夜性質</span></label>
+                        <label><input type="radio" name="q24" value="無業或退休"><span class="option-label">無業或退休</span></label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step" id="step5">
+                <h3>模組五：看診期待與其他資訊</h3>
+                
+                <div class="question" id="femaleOnlyQuestion" style="display: none; background: #fff4ce; padding: 15px; border-radius: 8px;">
+                    <div class="question-title" style="color: #d13438;">25. 👩 (女性專屬) 請問您目前是否懷孕或正在哺乳？</div>
+                    <div class="option-group">
+                        <label><input type="radio" name="q25" value="否"><span class="option-label">否</span></label>
+                        <label><input type="radio" name="q25" value="懷孕中"><span class="option-label">懷孕中</span></label>
+                        <label><input type="radio" name="q25" value="哺乳中"><span class="option-label">哺乳中</span></label>
+                    </div>
+                </div>
+
+                <div class="question">
+                    <div class="question-title">26. 您今天來看診，最希望醫師幫您解決什麼問題？ (可多選)</div>
+                    <div class="option-group">
+                        <label><input type="checkbox" name="q26" value="找出病因"><span class="option-label">找出病因</span></label>
+                        <label><input type="checkbox" name="q26" value="開藥緩解"><span class="option-label">開藥緩解不舒服</span></label>
+                        <label><input type="checkbox" name="q26" value="安排檢查"><span class="option-label">安排儀器檢查</span></label>
+                        <label><input type="checkbox" name="q26" value="開立證明"><span class="option-label">開立診斷書/轉診單</span></label>
+                    </div>
+                </div>
+                <div class="question">
+                    <div class="question-title">28. 還有什麼希望醫師一定要知道的嗎？ (選填)</div>
+                    <textarea name="q28" placeholder="請在此輸入其他補充事項..."></textarea>
+                </div>
+            </div>
+
+            <div class="footer-buttons">
+                <button type="button" class="btn-prev" id="btnPrev" onclick="navigate(-1)" style="display:none;">⬅ 上一頁</button>
+                <button type="button" class="btn-next" id="btnNext" onclick="navigate(1)">下一頁 ➡</button>
+                <button type="button" class="btn-submit" id="btnSubmit" onclick="generateSummary()" style="display:none;">📄 檢視填寫結果</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="summaryScreen" class="container" style="display:none;">
+        <h2 style="color: var(--primary); text-align: center;">📄 資料填寫彙總確認</h2>
+        <p style="text-align: center; color: #666;">請確認以下資料，確認無誤後點擊送出，即可方便日後資料轉出。</p>
+        
+        <div class="summary-box" id="summaryContent">
+            </div>
+
+        <div class="footer-buttons">
+            <button class="btn-prev" onclick="backToForm()">⬅ 返回修改</button>
+            <button class="btn-primary" style="background: #0078d4; color: white; padding: 12px 24px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; margin-left: 10px;" onclick="copySummaryData()">📋 一鍵複製資料</button>
+            <button class="btn-submit" onclick="finalSubmit()">✅ 確認送出至系統</button>
+        </div>
+    </div>
+
+    <div id="successScreen" style="display:none; text-align: center; margin-top: 50px; background: white; padding: 40px; border-radius: 12px; max-width: 600px; margin: 40px auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        <h1 style="color: #107c10; font-size: 60px; margin-bottom: 10px;">✅</h1>
+        <h2>問卷已成功送出！</h2>
+        <p style="color: #666; font-size: 16px;">您的健康資料已經同步至診間系統，<br>請安心於候診區等待叫號。</p>
+        <button onclick="location.reload()" style="background: var(--primary); color: white; padding: 12px 24px; font-size: 16px; border:none; border-radius: 8px; margin-top: 20px; font-weight: bold; cursor: pointer;">返回首頁</button>
+    </div>
+
+    <script>
+        let currentStep = 0;
+        const totalSteps = 6; 
+
+        // ==========================================
+        // 科系資料庫 (根據截圖建立)
+        // ==========================================
+        const hospitalDepartments = {
+            "內科": ["一般內科", "感染科", "心臟內科", "胸腔內科", "肝膽腸胃科", "腎臟內科", "血液暨腫瘤內科", "內分泌新陳代謝科", "神經內科"],
+            "外科": ["一般外科", "小兒外科", "神經外科", "骨科", "泌尿科"],
+            "婦產小兒科": ["小兒科", "小兒心臟科", "小兒神經科", "新生兒科", "小兒健檢", "婦產科"],
+            "其他科": ["耳鼻喉科", "皮膚科", "眼科", "家庭醫學科", "放射腫瘤科", "復健科", "新冠疫苗", "M痘疫苗", "安寧緩和醫療", "核子醫學科"],
+            "精神科": ["身心科", "兒童心智科"],
+            "牙科": ["一般牙科"],
+            "中醫部": ["中醫科"]
+        };
+
+        // 初始化科系選單
+        function initDepartments() {
+            const mainGroup = document.getElementById('mainDeptGroup');
+            for (const category in hospitalDepartments) {
+                const label = document.createElement('label');
+                label.innerHTML = `<input type="radio" name="mainDept" value="${category}"><span class="option-label">${category}</span>`;
+                // 綁定點擊事件以顯示次專科
+                label.querySelector('input').addEventListener('change', function() {
+                    showSubDepartments(this.value);
+                });
+                mainGroup.appendChild(label);
+            }
+        }
+
+        // 動態生成次專科選單
+        function showSubDepartments(category) {
+            const subContainer = document.getElementById('subDeptContainer');
+            const subGroup = document.getElementById('subDeptGroup');
+            
+            // 清空舊的次專科
+            subGroup.innerHTML = '';
+            
+            // 生成新的次專科按鈕
+            const subDepts = hospitalDepartments[category];
+            subDepts.forEach(sub => {
+                const label = document.createElement('label');
+                label.innerHTML = `<input type="radio" name="subDept" value="${sub}"><span class="option-label">${sub}</span>`;
+                subGroup.appendChild(label);
+            });
+            
+            // 顯示次專科區塊
+            subContainer.style.display = 'block';
+        }
+
+        // 頁面載入時執行初始化
+        window.addEventListener('DOMContentLoaded', initDepartments);
+
+        // ==========================================
+        // 核心功能：身分證字號驗證邏輯 (台灣標準)
+        // ==========================================
+        function isValidTaiwanID(id) {
+            if (!/^[A-Z][1289]\d{8}$/.test(id)) return false;
+            const letterMapping = { A: 10, B: 11, C: 12, D: 13, E: 14, F: 15, G: 16, H: 17, I: 34, J: 18, K: 19, L: 20, M: 21, N: 22, O: 35, P: 23, Q: 24, R: 25, S: 26, T: 27, U: 28, V: 29, W: 32, X: 30, Y: 31, Z: 33 };
+            const weights = [1, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1];
+            const n1 = letterMapping[id[0]];
+            const numArr = [Math.floor(n1 / 10), n1 % 10];
+            for (let i = 1; i < 10; i++) numArr.push(parseInt(id[i]));
+            let sum = 0;
+            for (let i = 0; i < 11; i++) sum += numArr[i] * weights[i];
+            return sum % 10 === 0;
+        }
+
+        function toggleSub(id, show) {
+            document.getElementById(id).style.display = show ? 'block' : 'none';
+        }
+
+        document.querySelectorAll('input[name="q1"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                toggleSub('q1-sub', e.target.value === '身體不舒服');
+            });
+        });
+
+        const painSlider = document.getElementById('painSlider');
+        const painDisplay = document.getElementById('painValueDisplay');
+        painSlider.addEventListener('input', function() {
+            let desc = "分";
+            if(this.value == 0) desc = "分 (無痛感)";
+            else if(this.value <= 3) desc = "分 (輕微)";
+            else if(this.value <= 6) desc = "分 (中度疼痛)";
+            else desc = "分 (嚴重劇痛)";
+            painDisplay.innerText = this.value + " " + desc;
+        });
+
+        // 頁面切換與檢核邏輯
+        function validateStep() {
+            if(currentStep === 0) {
+                const name = document.getElementById('pName').value.trim();
+                const id = document.getElementById('pId').value.trim();
+                const gender = document.querySelector('input[name="gender"]:checked');
+                const mainDept = document.querySelector('input[name="mainDept"]:checked');
+                const subDept = document.querySelector('input[name="subDept"]:checked');
+                
+                if(!name || !id || !gender) {
+                    alert("請完整填寫姓名、身分證與性別！");
+                    return false;
+                }
+
+                if(!isValidTaiwanID(id)) {
+                    document.getElementById('idError').style.display = 'block';
+                    document.getElementById('pId').style.borderColor = '#d13438';
+                    alert("身分證字號格式錯誤，請重新檢查！");
+                    return false;
+                } else {
+                    document.getElementById('idError').style.display = 'none';
+                    document.getElementById('pId').style.borderColor = '#ccc';
+                }
+
+                if (gender.value === '男' && id[1] !== '1' && id[1] !== '8') {
+                    alert("身分證字號與所選性別(男)不相符，請確認！");
+                    return false;
+                }
+                if (gender.value === '女' && id[1] !== '2' && id[1] !== '9') {
+                    alert("身分證字號與所選性別(女)不相符，請確認！");
+                    return false;
+                }
+
+                // 檢核科別是否已選
+                if (!mainDept || !subDept) {
+                    alert("請完整選擇您欲看診的「主科別」與「詳細科別」！");
+                    return false;
+                }
+            }
+            if(currentStep === 1) {
+                const q1 = document.querySelector('input[name="q1"]:checked');
+                if(!q1) {
+                    alert("請選擇今天看診的主要原因！");
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function updateUI() {
+            const progress = ((currentStep) / (totalSteps - 1)) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+
+            document.querySelectorAll('.step').forEach((el, index) => {
+                el.classList.toggle('active', index === currentStep);
+            });
+
+            document.getElementById('btnPrev').style.display = currentStep === 0 ? 'none' : 'block';
+            
+            if (currentStep === totalSteps - 1) {
+                document.getElementById('btnNext').style.display = 'none';
+                document.getElementById('btnSubmit').style.display = 'block';
+            } else {
+                document.getElementById('btnNext').style.display = 'block';
+                document.getElementById('btnSubmit').style.display = 'none';
+            }
+
+            if(currentStep === 5) {
+                const gender = document.querySelector('input[name="gender"]:checked');
+                if(gender && gender.value === '女') {
+                    document.getElementById('femaleOnlyQuestion').style.display = 'block';
+                } else {
+                    document.getElementById('femaleOnlyQuestion').style.display = 'none';
+                }
+            }
+        }
+
+        function navigate(direction) {
+            if (direction === 1 && !validateStep()) return;
+
+            let nextStep = currentStep + direction;
+
+            if (direction === 1 && currentStep === 1) {
+                const q1 = document.querySelector('input[name="q1"]:checked');
+                if (q1 && q1.value !== '身體不舒服') {
+                    nextStep = 3; 
+                }
+            }
+            if (direction === -1 && currentStep === 3) {
+                const q1 = document.querySelector('input[name="q1"]:checked');
+                if (q1 && q1.value !== '身體不舒服') {
+                    nextStep = 1;
+                }
+            }
+
+            if (nextStep >= 0 && nextStep < totalSteps) {
+                currentStep = nextStep;
+                updateUI();
+                window.scrollTo(0,0);
+            }
+        }
+
+        // ==========================================
+        // 核心功能：產生一頁彙總資料 (Summary)
+        // ==========================================
+        function getAns(name, type='radio') {
+            if(type === 'radio') {
+                const el = document.querySelector(`input[name="${name}"]:checked`);
+                return el ? el.value : '<span style="color:#999">未填寫</span>';
+            } else if(type === 'checkbox') {
+                const els = document.querySelectorAll(`input[name="${name}"]:checked`);
+                if(els.length === 0) return '<span style="color:#999">未填寫</span>';
+                return Array.from(els).map(e => e.value).join('、');
+            } else if(type === 'text') {
+                const el = document.querySelector(`[name="${name}"]`);
+                return el && el.value.trim() !== '' ? el.value.trim() : '<span style="color:#999">無</span>';
+            }
+        }
+
+        function generateSummary() {
+            let html = '';
+            
+            // 基本資料與科別
+            const gender = getAns('gender');
+            const mainDept = getAns('mainDept');
+            const subDept = getAns('subDept');
+            
+            html += `<div class="summary-item"><div class="summary-q">【基本資料】</div>
+                     <div class="summary-a">姓名：${document.getElementById('pName').value} | 身分證：${document.getElementById('pId').value} | 性別：${gender}</div></div>`;
+            
+            html += `<div class="summary-item"><div class="summary-q">【欲看診科別】</div>
+                     <div class="summary-a" style="color: #d13438; font-weight: bold;">${mainDept} ➔ ${subDept}</div></div>`;
+
+            // 模組一
+            const q1 = getAns('q1');
+            html += `<div class="summary-item"><div class="summary-q">1. 主要看診原因</div><div class="summary-a">${q1}</div></div>`;
+            
+            if(q1 === '身體不舒服') {
+                html += `<div class="summary-item"><div class="summary-q">2. 發生多久：</div><div class="summary-a">${getAns('q2')}</div></div>`;
+                html += `<div class="summary-item"><div class="summary-q">3. 首次看診：</div><div class="summary-a">${getAns('q3')}</div></div>`;
+                html += `<div class="summary-item"><div class="summary-q">4. 身邊人症狀：</div><div class="summary-a">${getAns('q4')}</div></div>`;
+                
+                // 模組二
+                html += `<div class="summary-item"><div class="summary-q">5. 不舒服位置：</div><div class="summary-a">${getAns('q5', 'checkbox')}</div></div>`;
+                html += `<div class="summary-item"><div class="summary-q">6. 感覺像什麼：</div><div class="summary-a">${getAns('q6', 'checkbox')}</div></div>`;
+                html += `<div class="summary-item"><div class="summary-q">7. 痛苦程度：</div><div class="summary-a">${document.getElementById('painSlider').value} 分</div></div>`;
+                html += `<div class="summary-item"><div class="summary-q">10. 伴隨狀況：</div><div class="summary-a">${getAns('q10', 'checkbox')}</div></div>`;
+            }
+
+            // 模組三 & 四
+            html += `<div class="summary-item"><div class="summary-q">13. 慢性病史：</div><div class="summary-a">${getAns('q13', 'checkbox')}</div></div>`;
+            
+            let allergy = getAns('q15');
+            if(allergy === '有') allergy += ` (細節：${getAns('q15_detail', 'text')})`;
+            html += `<div class="summary-item"><div class="summary-q">15. 藥物過敏史：</div><div class="summary-a">${allergy}</div></div>`;
+
+            let surgery = getAns('q17');
+            if(surgery === '有') surgery += ` (細節：${getAns('q17_detail', 'text')})`;
+            html += `<div class="summary-item"><div class="summary-q">17. 開刀住院史：</div><div class="summary-a">${surgery}</div></div>`;
+            
+            html += `<div class="summary-item"><div class="summary-q">18. TOCC(接觸史)：</div><div class="summary-a">${getAns('q18')}</div></div>`;
+            html += `<div class="summary-item"><div class="summary-q">20. 抽菸習慣：</div><div class="summary-a">${getAns('q20')}</div></div>`;
+            html += `<div class="summary-item"><div class="summary-q">21. 喝酒習慣：</div><div class="summary-a">${getAns('q21')}</div></div>`;
+            html += `<div class="summary-item"><div class="summary-q">24. 工作性質：</div><div class="summary-a">${getAns('q24')}</div></div>`;
+
+            // 模組五
+            if(gender === '女') {
+                html += `<div class="summary-item"><div class="summary-q">25. 懷孕/哺乳狀態：</div><div class="summary-a">${getAns('q25')}</div></div>`;
+            }
+            html += `<div class="summary-item"><div class="summary-q">26. 希望解決問題：</div><div class="summary-a">${getAns('q26', 'checkbox')}</div></div>`;
+            html += `<div class="summary-item"><div class="summary-q">28. 補充事項：</div><div class="summary-a">${getAns('q28', 'text')}</div></div>`;
+
+            document.getElementById('summaryContent').innerHTML = html;
+
+            // 切換畫面
+            document.getElementById('mainContainer').style.display = 'none';
+            document.getElementById('progressContainer').style.display = 'none';
+            document.getElementById('summaryScreen').style.display = 'block';
+            window.scrollTo(0,0);
+        }
+
+        function backToForm() {
+            document.getElementById('summaryScreen').style.display = 'none';
+            document.getElementById('mainContainer').style.display = 'block';
+            document.getElementById('progressContainer').style.display = 'block';
+        }
+
+        function copySummaryData() {
+            const summaryText = document.getElementById('summaryContent').innerText;
+            navigator.clipboard.writeText(summaryText).then(() => {
+                alert("✅ 資料已成功複製！您可以直接貼上至 HIS 系統的文字區塊中。");
+            }).catch(err => {
+                alert("複製失敗，請手動反白複製。");
+            });
+        }
+
+// ==========================================
+        // 🚀 真實連線版：送出資料至內網中介資料庫
+        // ==========================================
+// ==========================================
+        // 🚀 真實連線版：將病患資料寫入 Cloudflare KV
+        // ==========================================
+        async function finalSubmit() {
+            const submitBtn = document.querySelector('.btn-submit');
+            submitBtn.disabled = true;
+            submitBtn.innerText = "⏳ 資料加密上傳中...";
+
+            // 1. 組合專屬 Key (例如：201-15)
+            const room = document.getElementById('clinicRoom').value.trim();
+            const num = document.getElementById('consultNumber').value.trim();
+            const patientKey = `${room}-${num}`; 
+
+            // 2. 打包病患原始資料 (這時還是明文，因為要傳給您自己的專屬雲端)
+            const payload = {
+                room: room,
+                num: num,
+                name: document.getElementById('pName').value.trim(),
+                id_number: document.getElementById('pId').value.trim(),
+                gender: getAns('gender'),
+                mainDept: getAns('mainDept'),
+                subDept: getAns('subDept'),
+                q1: getAns('q1'),
+                q2: getAns('q2'),
+                // 如果有其他題目，可以在這裡繼續加上去，例如：
+                // q5: getAns('q5', 'checkbox'),
+                timestamp: new Date().toLocaleString()
+            };
+
+            // 3. 呼叫您的 Cloudflare Worker API
+            const WORKER_URL = `https://clinicalanalyticsengine.ai-tch-org-tw.workers.dev/?key=${patientKey}`;
+
+            try {
+                const response = await fetch(WORKER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error('伺服器無回應或發生錯誤');
+                
+                // 4. 傳送成功，切換到完成畫面
+                document.getElementById('mainHeader').style.display = 'none';
+                document.getElementById('summaryScreen').style.display = 'none';
+                document.getElementById('successScreen').style.display = 'block';
+                window.scrollTo(0,0);
+
+            } catch (error) {
+                alert("❌ 資料傳送失敗，請檢查網路連線。\n詳細錯誤：" + error.message);
+                submitBtn.disabled = false;
+                submitBtn.innerText = "✅ 確認送出至系統";
+            }
+        }
+
+        // 初始化
+        updateUI();
+    </script>
 </body>
 </html>
